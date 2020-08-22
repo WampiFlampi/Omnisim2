@@ -4,74 +4,23 @@
 using namespace std;
 
 #define SINE 0
-#define SQUARE 1
-#define OSC_TRIANGLE 2
-#define OSC_SAW_ANA 3
+#define OSC_SQUARE 1
+#define OSC_SAW_ANA 2
 
 //nonsense, disregard
 atomic<double> dFreqOut = 0.0;
 atomic<double> dBlack = 0.0;
 
+
 bool maj = true;
 bool min = false;
 bool seven = false;
+
 
 //convert to hertz from angular momentum 
 double w(double dHertz)
 {
 	return dHertz * 2.0 * PI;
-} 
-
-
-struct sEnvelope
-{
-	double dAttack;
-	double dDecay;
-	double dRelease;
-
-	double dPeak;
-	double dSustain;
-	
-	sEnvelope() {
-		dAttack = 0.05;
-		dDecay = 0.01;
-		dPeak = 0.04;
-		dSustain = 0.03;
-		dRelease = 0.10;
-	}
-	double GetAmp(double dTime)
-	{
-		double dAmp = 0.0;
-		return 0;
-	}
-
-
-};
-//wave generation function
-double osc(double dHertz, double dTime, int nType = SINE)
-{
-	switch (nType)
-	{
-	case SINE: // Sine wave bewteen -1 and +1
-		return .05*sin(w(dHertz) * dTime);
-
-	case OSC_TRIANGLE: // Triangle wave between -1 and +1
-		return asin(0.05*sin(w(dHertz) * dTime)) * (2.0 / PI);
-
-	case OSC_SAW_ANA: // Saw wave (analogue / warm / slow)
-	{
-		double dOutput = 0.0;
-
-		for (double n = 1.0; n < 40.0; n++)
-			dOutput += (sin(n * w(dHertz) * dTime)) / n;
-
-		return dOutput * (2.0 / PI)*.1;
-	}
-
-
-	default:
-		return 0.0;
-	}
 }
 
 
@@ -81,7 +30,120 @@ double ChangePitch(double base, double note) {
 	return base * pow(2, (note / 12));
 }
 
-double Chord(double Time, int nType) {
+
+
+struct sEnvelope
+{
+	double dAttack;
+	double dDecay;
+	double dRelease;
+	bool bNoteOn;
+	double dPeak;
+	double dSustain;
+	double dTimeOn;
+	double dTimeOff;
+
+	
+	sEnvelope() {
+		dAttack = 0.07;
+		dDecay = 0.01;
+		dPeak = 1;
+		dSustain = 0.8;
+		dRelease = 0.4;
+		dTimeOn = 0.0;
+		dTimeOff = 0.0;
+		bNoteOn = false;
+
+	}
+
+	void noteOn(double dOn) 
+	{
+		bNoteOn = true;
+		dTimeOn = dOn;
+
+	}
+	
+	void noteOff(double dOff)
+	{
+		bNoteOn = false;
+		dTimeOff = dOff;
+	}
+	
+	double GetAmp(double dTime)
+	{
+		double dAmp = 0;
+		double dLife = dTime - dTimeOn;
+
+		if (bNoteOn)
+		{
+			
+			if (dLife <= dAttack)
+			{
+				dAmp = (dLife / dAttack) * dPeak;
+			}
+			
+			if (dLife > dAttack && dLife <= (dAttack + dDecay))
+			{
+				dAmp = ((dLife - dAttack) / dDecay) * (dSustain - dPeak) + dPeak;
+			}
+
+			if (dLife > (dAttack + dDecay))
+			{
+				dAmp = dSustain;
+			}
+			
+			
+		}
+		else
+		{
+			dAmp = ((dTime - dTimeOff) / dRelease) * (0.0 - dSustain) + dSustain;
+			
+		}
+		
+		if (dAmp > 1.0 || dAmp < 0.001) {
+			dAmp = 0;
+		}
+
+		
+		return dAmp;
+	}
+
+
+};
+
+
+sEnvelope envelope;
+
+double osc(double dHertz, double dTime, int nType = SINE)
+{
+	double dConst = 0.03;
+	double dMod = w(dHertz) * dTime + 0.002 * dHertz * (sin(w(3) * dTime));
+
+	switch (nType)
+	{
+	case SINE: // Sine wave bewteen -1 and +1
+		return (dConst) * sin(dMod);
+
+	case OSC_SQUARE: // Square wave between -1 and +1
+		return (dConst)*sin(w(dHertz) * dTime) > 0 ? 1.0 : -1.0;
+
+	case OSC_SAW_ANA: // Saw wave (analogue / warm / slow)
+	{
+		double dOutput = 0.0;
+
+		for (double n = 1.0; n < 40.0; n++)
+			dOutput += (sin(n * dMod)) / n;
+
+		return dOutput * (2.0 / PI) * dConst;
+	}
+
+
+	default:
+		return 0.0;
+	}
+}
+
+double Chord(double dTime, int nType) {
 	int notes = 0;
 	double wave = 0.0;
 	vector<int> map;
@@ -101,17 +163,18 @@ double Chord(double Time, int nType) {
 	}
 
 	for (int i = 0; i < notes; i++) {
-		wave += osc(ChangePitch(pitch, map[i]), Time, nType);
+		wave += osc(ChangePitch(pitch, map[i]), dTime, nType) * envelope.GetAmp(dTime);
 	}
 	dBlack = wave;
 
 	return dBlack;
 }
 
+
 double MakeNoise(double dTime)  
 {
 	
-	return Chord(dTime, OSC_TRIANGLE);
+	return Chord(dTime, 2);
 
 }
 
@@ -119,10 +182,11 @@ int main()
 {
 	//I didn't write this, interfacing with the sound card is hard lmao
     vector<wstring> devices = olcNoiseMaker<short>::Enumerate();
+	
 	olcNoiseMaker<short> sound(devices[0], 44100, 1, 16, 256);
-    sound.SetUserFunction(MakeNoise);
+    
+	sound.SetUserFunction(MakeNoise);
 
-	//If you can figure out how to animate this be my guest
 	wcout << endl <<
 
 		"|        |  |        |  |        |" << endl <<
@@ -147,45 +211,63 @@ int main()
 		"we don't take kindly to such devil worship round these parts" << endl << endl;
 	
 	//c++ isn't like the other girls, it has vectors
-	double base = 130;
-	vector<double> basis = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, };
+	double base = 148.02;
+	vector<double> basis = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+	vector<int> notes = { 6,1,8,3,10,5 };
 	
 	for (int i = 0; i < 6; i++) {
-		basis[i] = base;
-		base = ChangePitch(base, 7);
+		
+		basis[i] = ChangePitch(base, notes[i]);
 
 		
 	}
 	
 
+	bool dKeyPress;
+	bool bCheck = false;
+	bool bCheck2 = false;
 
     while (1)
-    {
-        //this function sucks, again its windows specific, so I'm not going to bother
-		// yandere dev time
-		if (GetAsyncKeyState('Q') & 0x8000) {
-			dFreqOut = basis[0];
+    {	
+		dKeyPress = false;
+		for (int i = 0; i < 6; i++)
+		{
+			
+			if (GetAsyncKeyState((unsigned char)("QWEASD"[i])) & 0x8000) 
+			{
+
+				dKeyPress = true;
+				
+				if (!bCheck2) 
+				{
+					dFreqOut = basis[i];
+					envelope.noteOn(sound.GetTime());
+					bCheck2 = true;
+				}
+
+				if (dKeyPress) {
+					bCheck = true;
+					break;
+				}
+			}
+			
+			
 		}
-		else if (GetAsyncKeyState('W') & 0x8000) {
-			dFreqOut = basis[1];
+		if (!dKeyPress) {
+			
+			bCheck2 = false;
+
+			if (bCheck) 
+		{
+			envelope.noteOff(sound.GetTime());
+			bCheck = false;
 		}
-		else if (GetAsyncKeyState('E') & 0x8000) {
-			dFreqOut = basis[2];
-			wcout << GetAsyncKeyState('E') << endl << endl;
-		}
-		else if (GetAsyncKeyState('A') & 0x8000) {
-			dFreqOut = basis[3];
 
 		}
-		else if (GetAsyncKeyState('S') & 0x8000) {
-			dFreqOut = basis[4];
-		}
-		else if (GetAsyncKeyState('D') & 0x8000) {
-			dFreqOut = basis[5];
-		}
-        else {
-            dFreqOut = 0.0;
-        }
+		
+		//this function sucks, again its windows specific, so I'm not going to bother
+		// yandere dev time
+		
 		
 
 
