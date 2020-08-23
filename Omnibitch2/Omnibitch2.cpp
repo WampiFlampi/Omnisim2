@@ -207,15 +207,15 @@ int main()
 		"|    a   |  |      s |  |     d  |" << endl <<
 		"|________|  |________|  |________|" << endl <<
 		"                                  " << endl <<
-		"So like amplitude scaling based on frequency," << endl <<
-		"we don't take kindly to such devil worship round these parts" << endl << endl;
+		"Initalizing Funk" << endl <<
+		"Z and X work as well I don't really feel like making the ui, I'll do a graphical one later" << endl << endl;
 	
 	//c++ isn't like the other girls, it has vectors
 	double base = 148.02;
-	vector<double> basis = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-	vector<int> notes = { 6,1,8,3,10,5 };
+	vector<double> basis = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+	vector<int> notes = { 6,1,8,3,10,5,12,7 };
 	
-	for (int i = 0; i < 6; i++) {
+	for (int i = 0; i < 8; i++) {
 		
 		basis[i] = ChangePitch(base, notes[i]);
 
@@ -224,29 +224,32 @@ int main()
 	
 
 	bool dKeyPress;
-	bool bCheck = false;
-	bool bCheck2 = false;
+	int iCurrentKey = -1;
 
     while (1)
     {	
 		dKeyPress = false;
-		for (int i = 0; i < 6; i++)
+		for (int i = 0; i < 8; i++)
 		{
 			
-			if (GetAsyncKeyState((unsigned char)("QWEASD"[i])) & 0x8000) 
+			if (GetAsyncKeyState((unsigned char)("QWEASDZX"[iCurrentKey])) & 0x8000) {
+				dKeyPress = true;
+				break;
+
+			}
+			
+
+			if (GetAsyncKeyState((unsigned char)("QWEASDZX"[i])) & 0x8000) 
 			{
 
 				dKeyPress = true;
+				iCurrentKey = i;
+				dFreqOut = basis[i];
+				envelope.noteOn(sound.GetTime());
 				
-				if (!bCheck2) 
-				{
-					dFreqOut = basis[i];
-					envelope.noteOn(sound.GetTime());
-					bCheck2 = true;
-				}
+				
 
 				if (dKeyPress) {
-					bCheck = true;
 					break;
 				}
 			}
@@ -255,12 +258,12 @@ int main()
 		}
 		if (!dKeyPress) {
 			
-			bCheck2 = false;
+			
 
-			if (bCheck) 
+			if (iCurrentKey != -1) 
 		{
 			envelope.noteOff(sound.GetTime());
-			bCheck = false;
+			iCurrentKey = -1;
 		}
 
 		}
